@@ -57,12 +57,13 @@ export async function populateEnvFromVault(): Promise<number> {
 
   let count = 0
 
-  for (const [envKey, secretPath] of Object.entries(PROVIDER_TO_SECRET_PATH)) {
+  for (const envKey of Object.keys(PROVIDER_TO_SECRET_PATH)) {
     if (process.env[envKey]) continue
     if (shouldSkipVaultForProvider(envKey)) continue
 
     try {
-      const res = await client.secrets.get(config.vaultId, secretPath)
+      const resolvedPath = getSecretPathForProvider(envKey)
+      const res = await client.secrets.get(config.vaultId, resolvedPath)
       if (!res.error && res.data?.value) {
         process.env[envKey] = res.data.value
         resolvedCache.set(envKey, res.data.value)
