@@ -4,7 +4,7 @@ import {
   loadOneclawConfig,
   getOneclawAgentApiKey,
 } from './oneclaw.js'
-import { getOneclawAgentClient } from './oneclawClient.js'
+import { getAuthenticatedAgentClient } from './oneclawClient.js'
 import { isEnvTruthy } from './envUtils.js'
 
 const ANTHROPIC_AUDIENCE = 'https://api.anthropic.com'
@@ -30,7 +30,7 @@ export function clearOidcTokenCache(): void {
 }
 
 async function getFederatedJwt(): Promise<string | null> {
-  const client = getOneclawAgentClient()
+  const client = await getAuthenticatedAgentClient()
   if (!client) return null
 
   try {
