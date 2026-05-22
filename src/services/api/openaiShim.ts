@@ -1595,7 +1595,7 @@ class OpenAIShimMessages {
     let httpResponse: Response | undefined
 
     const promise = (async () => {
-      const request = resolveProviderRequest({ model: self.providerOverride?.model ?? params.model, baseUrl: self.providerOverride?.baseURL, reasoningEffortOverride: self.reasoningEffort })
+      let request = resolveProviderRequest({ model: self.providerOverride?.model ?? params.model, baseUrl: self.providerOverride?.baseURL, reasoningEffortOverride: self.reasoningEffort })
       const response = await self._doRequest(request, params, options)
       httpResponse = response
 
@@ -2082,6 +2082,21 @@ class OpenAIShimMessages {
       request.transport === 'responses'
         ? `${baseUrl}/responses`
         : buildChatCompletionsUrl(baseUrl)
+
+    // 1claw Shroud: route through TEE proxy when enabled.
+    // Shroud handles provider auth via vault reference, so we replace the
+    // base URL and merge Shroud-specific headers. Local providers are excluded.
+    const shroudRouting = isLocal ? null : await (async () => {
+      try {
+        const { applyShroudRouting } = await import('../../utils/oneclawShroud.js')
+        return applyShroudRouting({ model: request.resolvedModel })
+      } catch { return null }
+    })()
+    if (shroudRouting) {
+      request = { ...request, baseUrl: shroudRouting.baseUrl }
+      Object.assign(headers, shroudRouting.headers)
+      delete headers['Authorization']
+    }
 
     let activeBaseUrl = request.baseUrl
     let requestUrl = buildRequestUrl(activeBaseUrl)

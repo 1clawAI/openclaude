@@ -497,6 +497,25 @@ export async function getAnthropicClient({
     return new AnthropicVertex(vertexArgs) as unknown as Anthropic
   }
 
+  // 1claw Shroud: route Anthropic traffic through TEE proxy when enabled
+  const shroudAnthropicRouting = await (async () => {
+    try {
+      const { applyShroudRouting } = await import('../../utils/oneclawShroud.js')
+      return applyShroudRouting({ provider: 'anthropic', model })
+    } catch { return null }
+  })()
+
+  if (shroudAnthropicRouting) {
+    const shroudHeaders = { ...defaultHeaders, ...shroudAnthropicRouting.headers }
+    return new Anthropic({
+      baseURL: shroudAnthropicRouting.baseUrl.replace(/\/v1$/, ''),
+      apiKey: 'shroud-managed',
+      ...ARGS,
+      defaultHeaders: shroudHeaders,
+      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+    })
+  }
+
   // Determine authentication method based on available tokens
   const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
     apiKey: isClaudeAiSubscriber ? null : apiKey || getAnthropicApiKey(),
