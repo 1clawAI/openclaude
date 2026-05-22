@@ -68,6 +68,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@1claw/sdk": "^0.27.0",
     "@alcalzone/ansi-tokenize": "0.3.0",
     "@anthropic-ai/bedrock-sdk": "0.29.1",
     "@anthropic-ai/foundry-sdk": "0.2.3",
