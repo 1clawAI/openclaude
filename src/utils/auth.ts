@@ -145,15 +145,22 @@ export function isAnthropicAuthEnabled(): boolean {
   const hasExternalApiKey =
     apiKeySource === 'ANTHROPIC_API_KEY' || apiKeySource === 'apiKeyHelper'
 
+  // 1claw Shroud/OIDC: agent key handles auth via TEE proxy.
+  // ONECLAW_AUTH_ACTIVE is set early in cli.tsx startup when Shroud is enabled
+  // with token-billing or oidc-federation mode.
+  const isShroudAuth = process.env.ONECLAW_AUTH_ACTIVE === '1'
+
   // Disable Anthropic auth if:
   // 1. Using 3rd party services (Bedrock/Vertex/Foundry)
   // 2. User has an external API key (regardless of proxy configuration)
   // 3. User has an external auth token (regardless of proxy configuration)
+  // 4. Using 1claw Shroud with token-billing or OIDC federation
   // this may cause issues if users have complex proxy / gateway "client-side creds" auth scenarios,
   // e.g. if they want to set X-Api-Key to a gateway key but use Anthropic OAuth for the Authorization
   // if we get reports of that, we should probably add an env var to force OAuth enablement
   const shouldDisableAuth =
     is3P ||
+    isShroudAuth ||
     (hasExternalAuthToken && !isManagedOAuthContext()) ||
     (hasExternalApiKey && !isManagedOAuthContext())
 

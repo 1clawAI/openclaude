@@ -1578,9 +1578,9 @@ class OpenAIShimStream {
 class OpenAIShimMessages {
   private defaultHeaders: Record<string, string>
   private reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
-  private providerOverride?: { model: string; baseURL: string; apiKey: string }
+  private providerOverride?: { model: string; baseURL: string; apiKey: string; isShroudRouted?: boolean }
 
-  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string }) {
+  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string; isShroudRouted?: boolean }) {
     this.defaultHeaders = filterAnthropicHeaders(defaultHeaders)
     this.reasoningEffort = reasoningEffort
     this.providerOverride = providerOverride
@@ -1595,7 +1595,7 @@ class OpenAIShimMessages {
     let httpResponse: Response | undefined
 
     const promise = (async () => {
-      const request = resolveProviderRequest({ model: self.providerOverride?.model ?? params.model, baseUrl: self.providerOverride?.baseURL, reasoningEffortOverride: self.reasoningEffort })
+      let request = resolveProviderRequest({ model: self.providerOverride?.model ?? params.model, baseUrl: self.providerOverride?.baseURL, reasoningEffortOverride: self.reasoningEffort })
       const response = await self._doRequest(request, params, options)
       httpResponse = response
 
@@ -1843,6 +1843,11 @@ class OpenAIShimMessages {
       delete body.max_completion_tokens
     }
 
+    if (this.providerOverride?.isShroudRouted && body.max_completion_tokens !== undefined) {
+      body.max_tokens = body.max_completion_tokens
+      delete body.max_completion_tokens
+    }
+
     for (const field of shimConfig.removeBodyFields ?? []) {
       delete body[field]
     }
@@ -2082,6 +2087,29 @@ class OpenAIShimMessages {
       request.transport === 'responses'
         ? `${baseUrl}/responses`
         : buildChatCompletionsUrl(baseUrl)
+
+    // 1claw Shroud: route through TEE proxy when enabled.
+    // Shroud handles provider auth via vault reference, so we replace the
+    // base URL and merge Shroud-specific headers. Local providers are excluded.
+    // Skip when providerOverride is set — client-level routing already applied.
+    if (!this.providerOverride) {
+      const shroudRouting = isLocal ? null : await (async () => {
+        try {
+          const { applyShroudRouting } = await import('../../utils/oneclawShroud.js')
+          return applyShroudRouting({ model: request.resolvedModel })
+        } catch { return null }
+      })()
+      if (shroudRouting) {
+        request = { ...request, baseUrl: shroudRouting.baseUrl }
+        for (const key of Object.keys(headers)) {
+          const lower = key.toLowerCase()
+          if (lower === 'authorization' || lower === 'x-api-key' || lower === 'api-key') {
+            delete headers[key]
+          }
+        }
+        Object.assign(headers, shroudRouting.headers)
+      }
+    }
 
     let activeBaseUrl = request.baseUrl
     let requestUrl = buildRequestUrl(activeBaseUrl)
@@ -2558,7 +2586,7 @@ class OpenAIShimBeta {
   messages: OpenAIShimMessages
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
 
-  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string }) {
+  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string; isShroudRouted?: boolean }) {
     this.messages = new OpenAIShimMessages(defaultHeaders, reasoningEffort, providerOverride)
     this.reasoningEffort = reasoningEffort
   }
@@ -2569,7 +2597,7 @@ export function createOpenAIShimClient(options: {
   maxRetries?: number
   timeout?: number
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
-  providerOverride?: { model: string; baseURL: string; apiKey: string }
+  providerOverride?: { model: string; baseURL: string; apiKey: string; isShroudRouted?: boolean }
 }): unknown {
   hydrateGeminiAccessTokenFromSecureStorage()
   hydrateGithubModelsTokenFromSecureStorage()

@@ -146,6 +146,105 @@ async function main(): Promise<void> {
     hydrateGithubModelsTokenFromSecureStorage()
   }
 
+  {
+    const { isOneclawConfigured } = await import('../utils/oneclaw.js')
+    if (isOneclawConfigured()) {
+      const { populateEnvFromVault } = await import('../utils/oneclawVault.js')
+      const vaultKeys = await populateEnvFromVault()
+      if (vaultKeys > 0) {
+        const { logForDebugging } = await import('../utils/debug.js')
+        logForDebugging(`1claw vault: loaded ${vaultKeys} provider key(s) from vault`)
+      }
+    }
+  }
+
+  // Signal to auth subsystem that Shroud handles authentication for this session.
+  // Set early so isAnthropicAuthEnabled() can check a simple env flag instead of
+  // re-reading config files through bundler-wrapped ESM modules.
+  {
+    const { isOneclawConfigured, getOneclawAuthMode } = await import('../utils/oneclaw.js')
+    const { isShroudEnabled } = await import('../utils/oneclawShroud.js')
+    if (isOneclawConfigured() && isShroudEnabled()) {
+      const authMode = getOneclawAuthMode()
+      if (authMode === 'token-billing' || authMode === 'oidc-federation') {
+        process.env.ONECLAW_AUTH_ACTIVE = '1'
+        process.env.ONECLAW_AUTH_MODE = authMode
+      }
+    }
+  }
+
+  // First-run detection: if no provider is configured and no 1claw config exists,
+  // offer to run the 1claw setup wizard before continuing.
+  if (process.stdout.isTTY && !hasConfiguredProviderProfile) {
+    const { isOneclawConfigured } = await import('../utils/oneclaw.js')
+    const hasAnthropicKey = Boolean(process.env.ANTHROPIC_API_KEY)
+    const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY)
+    const hasAnyProvider = hasAnthropicKey || hasOpenAIKey ||
+      Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) ||
+      Boolean(process.env.MISTRAL_API_KEY)
+
+    if (!hasAnyProvider && !isOneclawConfigured()) {
+      const { createInterface } = await import('node:readline')
+      const rl = createInterface({ input: process.stdin, output: process.stdout })
+      const answer = await new Promise<string>(resolve => {
+        rl.question(
+          '\n  No LLM provider configured. Set up with 1claw? (y/N) ',
+          resolve,
+        )
+      })
+      rl.close()
+
+      if (answer.trim().toLowerCase() === 'y') {
+        // biome-ignore lint/suspicious/noConsole:: intentional
+        console.log('  Run: bun run setup\n')
+        console.log('  Or start OpenClaude and use the /1claw command.\n')
+      }
+    }
+  }
+
+  // Signal to auth subsystem that Shroud handles authentication for this session.
+  // Set early so isAnthropicAuthEnabled() can check a simple env flag instead of
+  // re-reading config files through bundler-wrapped ESM modules.
+  {
+    const { isOneclawConfigured, getOneclawAuthMode } = await import('../utils/oneclaw.js')
+    const { isShroudEnabled } = await import('../utils/oneclawShroud.js')
+    if (isOneclawConfigured() && isShroudEnabled()) {
+      const authMode = getOneclawAuthMode()
+      if (authMode === 'token-billing' || authMode === 'oidc-federation') {
+        process.env.ONECLAW_AUTH_ACTIVE = '1'
+      }
+    }
+  }
+
+  // First-run detection: if no provider is configured and no 1claw config exists,
+  // offer to run the 1claw setup wizard before continuing.
+  if (process.stdout.isTTY && !hasConfiguredProviderProfile) {
+    const { isOneclawConfigured } = await import('../utils/oneclaw.js')
+    const hasAnthropicKey = Boolean(process.env.ANTHROPIC_API_KEY)
+    const hasOpenAIKey = Boolean(process.env.OPENAI_API_KEY)
+    const hasAnyProvider = hasAnthropicKey || hasOpenAIKey ||
+      Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) ||
+      Boolean(process.env.MISTRAL_API_KEY)
+
+    if (!hasAnyProvider && !isOneclawConfigured()) {
+      const { createInterface } = await import('node:readline')
+      const rl = createInterface({ input: process.stdin, output: process.stdout })
+      const answer = await new Promise<string>(resolve => {
+        rl.question(
+          '\n  No LLM provider configured. Set up with 1claw? (y/N) ',
+          resolve,
+        )
+      })
+      rl.close()
+
+      if (answer.trim().toLowerCase() === 'y') {
+        // biome-ignore lint/suspicious/noConsole:: intentional
+        console.log('  Run: bun run setup\n')
+        console.log('  Or start OpenClaude and use the /1claw command.\n')
+      }
+    }
+  }
+
   await validateProviderEnvForStartupOrExit()
 
   // #808: --model alone (no --provider) — route to the env var matching the

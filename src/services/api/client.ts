@@ -497,6 +497,70 @@ export async function getAnthropicClient({
     return new AnthropicVertex(vertexArgs) as unknown as Anthropic
   }
 
+  // 1claw Shroud: route Anthropic traffic through TEE proxy when enabled
+  const shroudAnthropicRouting = await (async () => {
+    try {
+      const { applyShroudRouting } = await import('../../utils/oneclawShroud.js')
+      return applyShroudRouting({ provider: 'anthropic', model })
+    } catch { return null }
+  })()
+
+  if (shroudAnthropicRouting) {
+    if (shroudAnthropicRouting.useOpenAICompat) {
+      // Token-billing: Stripe AI Gateway requires OpenAI-shaped /v1/chat/completions
+      // with Stripe-format model names (dots not hyphens, e.g. claude-sonnet-4.6).
+      const stripeModel = shroudAnthropicRouting.stripeModelName
+        ?? model ?? process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-4.5'
+      const shroudHeaders = { ...defaultHeaders, ...shroudAnthropicRouting.headers }
+      const safeHeaders: Record<string, string> = {}
+      for (const [k, v] of Object.entries(shroudHeaders)) {
+        const lower = k.toLowerCase()
+        if (lower === 'authorization' || lower === 'x-api-key' || lower === 'api-key') continue
+        safeHeaders[k] = v
+      }
+      const { createOpenAIShimClient } = await import('./openaiShim.js')
+      return createOpenAIShimClient({
+        defaultHeaders: safeHeaders,
+        maxRetries,
+        timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
+        reasoningEffort: shimReasoningEffort,
+        providerOverride: {
+          model: stripeModel,
+          baseURL: shroudAnthropicRouting.baseUrl,
+          apiKey: 'shroud-managed',
+          isShroudRouted: true,
+        },
+      }) as unknown as Anthropic
+    }
+    const shroudHeaders = { ...defaultHeaders, ...shroudAnthropicRouting.headers }
+    return new Anthropic({
+      baseURL: shroudAnthropicRouting.baseUrl.replace(/\/v1$/, ''),
+      apiKey: 'shroud-managed',
+      ...ARGS,
+      defaultHeaders: shroudHeaders,
+      ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+    })
+  }
+
+  // 1claw OIDC Federation: keyless Anthropic access via WIF
+  // Only used when the user has federation enabled and no existing auth
+  if (!isClaudeAiSubscriber && !apiKey && !getAnthropicApiKey()) {
+    const oidcToken = await (async () => {
+      try {
+        const { resolveAnthropicOidcToken } = await import('../../utils/oneclawOidc.js')
+        return resolveAnthropicOidcToken()
+      } catch { return null }
+    })()
+    if (oidcToken) {
+      return new Anthropic({
+        apiKey: oidcToken,
+        ...ARGS,
+        defaultHeaders,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      })
+    }
+  }
+
   // Determine authentication method based on available tokens
   const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
     apiKey: isClaudeAiSubscriber ? null : apiKey || getAnthropicApiKey(),
