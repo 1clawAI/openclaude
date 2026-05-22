@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { getClaudeConfigHomeDir } from './envUtils.js'
 
@@ -45,7 +45,7 @@ export function loadOneclawConfig(): OneclawConfig | null {
 export function saveOneclawConfig(config: OneclawConfig): void {
   const configDir = getConfigDir()
   if (!existsSync(configDir)) {
-    mkdirSync(configDir, { recursive: true })
+    mkdirSync(configDir, { recursive: true, mode: 0o700 })
   }
   writeFileSync(getConfigPath(), JSON.stringify(config, null, 2), {
     encoding: 'utf8',
@@ -54,11 +54,21 @@ export function saveOneclawConfig(config: OneclawConfig): void {
 }
 
 export function isOneclawConfigured(): boolean {
-  return loadOneclawConfig() !== null
+  const config = loadOneclawConfig()
+  return config !== null && Boolean(config.agentId) && Boolean(config.agentApiKey)
+}
+
+export function deleteOneclawConfig(): void {
+  const configPath = getConfigPath()
+  if (existsSync(configPath)) {
+    unlinkSync(configPath)
+  }
 }
 
 export function getOneclawBaseUrl(): string {
-  return process.env.ONECLAW_BASE_URL ?? ONECLAW_BASE_URL
+  if (process.env.ONECLAW_BASE_URL) return process.env.ONECLAW_BASE_URL
+  const config = loadOneclawConfig()
+  return config?.baseUrl || ONECLAW_BASE_URL
 }
 
 export function getShroudBaseUrl(): string {

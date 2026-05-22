@@ -8,6 +8,7 @@ import {
 
 let cachedAgentClient: OneclawClient | null = null
 let agentAuthenticated = false
+let authAttempted = false
 
 export function getOneclawAgentClient(): OneclawClient | null {
   if (cachedAgentClient) return cachedAgentClient
@@ -31,12 +32,13 @@ export async function getAuthenticatedAgentClient(): Promise<OneclawClient | nul
   const client = getOneclawAgentClient()
   if (!client) return null
 
-  if (agentAuthenticated) return client
+  if (agentAuthenticated || authAttempted) return client
 
   const agentId = getOneclawAgentId()
   const apiKey = getOneclawAgentApiKey()
   if (!agentId || !apiKey) return client
 
+  authAttempted = true
   try {
     await client.auth.agentToken({ agent_id: agentId, api_key: apiKey })
     agentAuthenticated = true
@@ -58,6 +60,7 @@ export function createOneclawHumanClient(apiKey: string): OneclawClient {
 export function resetOneclawClientCache(): void {
   cachedAgentClient = null
   agentAuthenticated = false
+  authAttempted = false
 }
 
 export async function resolveSecretFromVault(

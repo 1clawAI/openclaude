@@ -13,6 +13,7 @@ import type { LocalJSXCommandCall } from '../../types/command.js'
 import {
   loadOneclawConfig,
   saveOneclawConfig,
+  deleteOneclawConfig,
   getOneclawBaseUrl,
   PROVIDER_TO_SECRET_PATH,
   DEFAULT_AGENT_SCOPES,
@@ -133,26 +134,18 @@ type SetupStep =
 function buildProfileForProvider(
   provider: ProviderOption,
   model: string,
-  apiKey: string | undefined,
+  _apiKey: string | undefined,
 ): { profile: ProviderProfile; env: ProfileEnv } | null {
   switch (provider.id) {
     case 'anthropic':
-      return apiKey
-        ? {
-            profile: 'anthropic' as ProviderProfile,
-            env: {
-              ANTHROPIC_API_KEY: apiKey,
-              ANTHROPIC_MODEL: model,
-            },
-          }
-        : {
-            profile: 'anthropic' as ProviderProfile,
-            env: { ANTHROPIC_MODEL: model },
-          }
+      return {
+        profile: 'anthropic' as ProviderProfile,
+        env: { ANTHROPIC_MODEL: model },
+      }
     case 'openai': {
       const env = buildOpenAIProfileEnv({
         goal: normalizeRecommendationGoal('balanced'),
-        apiKey: apiKey ?? 'shroud-managed',
+        apiKey: 'vault-managed',
         model,
         processEnv: {},
       })
@@ -160,7 +153,7 @@ function buildProfileForProvider(
     }
     case 'gemini': {
       const env = buildGeminiProfileEnv({
-        apiKey: apiKey ?? 'shroud-managed',
+        apiKey: 'vault-managed',
         model,
         authMode: 'api-key',
         processEnv: {},
@@ -169,7 +162,7 @@ function buildProfileForProvider(
     }
     case 'mistral': {
       const env = buildMistralProfileEnv({
-        apiKey: apiKey ?? 'shroud-managed',
+        apiKey: 'vault-managed',
         model,
         processEnv: {},
       })
@@ -178,7 +171,7 @@ function buildProfileForProvider(
     case 'xai': {
       const env = buildOpenAIProfileEnv({
         goal: normalizeRecommendationGoal('balanced'),
-        apiKey: apiKey ?? 'shroud-managed',
+        apiKey: 'vault-managed',
         model,
         baseUrl: 'https://api.x.ai/v1',
         processEnv: {},
@@ -233,22 +226,11 @@ function OneclawSetup({
 
   useEffect(() => {
     if (step.name === 'disable') {
-      const config = loadOneclawConfig()
-      if (!config) {
+      if (!loadOneclawConfig()) {
         onDone('1claw is not configured.')
         return
       }
-      const emptyConfig: OneclawConfig = {
-        agentId: '',
-        agentApiKey: '',
-        vaultId: '',
-        baseUrl: '',
-        shroudEnabled: false,
-        intentsEnabled: false,
-        oidcFederationEnabled: false,
-        providerSecretPaths: {},
-      }
-      saveOneclawConfig(emptyConfig)
+      deleteOneclawConfig()
       resetOneclawClientCache()
       onDone('1claw integration disabled.')
     }
@@ -280,7 +262,8 @@ function OneclawSetup({
     try {
       const baseUrl = getOneclawBaseUrl()
       const humanClient = createOneclawHumanClient(apiKey)
-      await humanClient.auth.apiKeyToken({ api_key: apiKey })
+      const authRes = await humanClient.auth.apiKeyToken({ api_key: apiKey })
+      if (authRes.error) throw new Error(`Authentication failed: ${authRes.error.message}`)
 
       const vaultRes = await humanClient.vault.create({
         name: 'openclaude-providers',
@@ -350,13 +333,7 @@ function OneclawSetup({
       saveOneclawConfig(config)
       resetOneclawClientCache()
 
-      if (authMode === 'byo-key' && providerApiKey) {
-        const profileResult = buildProfileForProvider(provider, model, providerApiKey)
-        if (profileResult) {
-          const profileFile = createProfileFile(profileResult.profile, profileResult.env)
-          saveProfileFile(profileFile)
-        }
-      } else if (authMode === 'token-billing' || authMode === 'oidc-federation') {
+      {
         const profileResult = buildProfileForProvider(provider, model, undefined)
         if (profileResult) {
           const profileFile = createProfileFile(profileResult.profile, profileResult.env)
@@ -437,6 +414,7 @@ function OneclawSetup({
               onChangeCursorOffset={setCursorOffset}
               focus
               showCursor
+              mask="*"
             />
           </Box>
         </Box>
@@ -564,7 +542,7 @@ function OneclawSetup({
       <Dialog title="1claw Setup" subtitle={`Enter ${step.provider.label} API Key`} onCancel={() => setStep({ name: 'choose-auth', humanKey: step.humanKey, provider: step.provider, model: step.model })}>
         <Box flexDirection="column" gap={1}>
           <Text>Enter your {step.provider.label} API key.</Text>
-          <Text dimColor>It will be stored in the 1claw Vault (HSM-encrypted, never on disk).</Text>
+          <Text dimColor>It will be stored in the 1claw Vault (HSM-encrypted).</Text>
           <Box>
             <Text>API Key: </Text>
             <TextInput
@@ -581,6 +559,7 @@ function OneclawSetup({
               onChangeCursorOffset={setProviderCursorOffset}
               focus
               showCursor
+              mask="*"
             />
           </Box>
         </Box>

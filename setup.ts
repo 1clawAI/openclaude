@@ -75,7 +75,7 @@ function buildProviderProfileEnv(
   model: string,
   apiKey: string | undefined,
 ): Record<string, unknown> | null {
-  const keyOrPlaceholder = apiKey ?? 'shroud-managed'
+  const keyOrPlaceholder = apiKey ?? 'vault-managed'
   switch (provider.id) {
     case 'anthropic':
       return {
@@ -100,9 +100,8 @@ function buildProviderProfileEnv(
         profile: 'gemini',
         env: {
           GEMINI_API_KEY: keyOrPlaceholder,
-          CLAUDE_CODE_USE_OPENAI: '1',
-          OPENAI_BASE_URL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-          OPENAI_MODEL: model,
+          CLAUDE_CODE_USE_GEMINI: '1',
+          GEMINI_MODEL: model,
         },
         createdAt: new Date().toISOString(),
       }
@@ -111,9 +110,8 @@ function buildProviderProfileEnv(
         profile: 'mistral',
         env: {
           MISTRAL_API_KEY: keyOrPlaceholder,
-          CLAUDE_CODE_USE_OPENAI: '1',
-          OPENAI_BASE_URL: 'https://api.mistral.ai/v1/',
-          OPENAI_MODEL: model,
+          CLAUDE_CODE_USE_MISTRAL: '1',
+          MISTRAL_MODEL: model,
         },
         createdAt: new Date().toISOString(),
       }
@@ -190,7 +188,7 @@ function getConfigDir(): string {
 
 function saveConfig(config: OneclawConfig): void {
   const dir = getConfigDir()
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: 0o700 })
   writeFileSync(join(dir, 'oneclaw.json'), JSON.stringify(config, null, 2), { encoding: 'utf8', mode: 0o600 })
 }
 
@@ -375,16 +373,19 @@ async function main() {
       federation_enabled: enableOidc,
       federation_audiences: enableOidc ? ['https://api.anthropic.com'] : [],
     }
-    await client.agents.update(agentId, updatePayload as any)
+    const updateRes = await client.agents.update(agentId, updatePayload as any)
+    if (updateRes.error) throw new Error(`Agent update: ${updateRes.error.message}`)
     console.log('  Agent configured: Shroud + Intents enabled')
 
-    await client.access.grantAgent(vaultId, agentId, ['read'], { secretPathPattern: DEFAULT_POLICY_PATH_PATTERN })
+    const policyRes = await client.access.grantAgent(vaultId, agentId, ['read'], { secretPathPattern: DEFAULT_POLICY_PATH_PATTERN })
+    if (policyRes.error) throw new Error(`Policy: ${policyRes.error.message}`)
     console.log('  Policy granted: agent can read providers/**')
 
     if (authMode === 'byo-key' && providerApiKey) {
       const secretPath = PROVIDER_TO_SECRET_PATH[provider.envKey]
       if (secretPath) {
-        await client.secrets.set(vaultId, secretPath, providerApiKey, { type: 'api_key' })
+        const secretRes = await client.secrets.set(vaultId, secretPath, providerApiKey, { type: 'api_key' })
+        if (secretRes.error) throw new Error(`Secret: ${secretRes.error.message}`)
         console.log(`  API key stored in vault at ${secretPath}`)
       }
     }
@@ -405,7 +406,7 @@ async function main() {
     saveConfig(config)
     const configPath = join(getConfigDir(), 'oneclaw.json')
 
-    const profileEnv = buildProviderProfileEnv(provider, model, authMode === 'byo-key' ? providerApiKey : undefined)
+    const profileEnv = buildProviderProfileEnv(provider, model, undefined)
     if (profileEnv) {
       const profilePath = join(getConfigDir(), '.openclaude-profile.json')
       writeFileSync(profilePath, JSON.stringify(profileEnv, null, 2), { encoding: 'utf8', mode: 0o600 })
