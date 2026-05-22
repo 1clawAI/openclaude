@@ -97,7 +97,7 @@ function txResultToBlock(content: TxOutput, toolUseID: string): ToolResultBlockP
 
 function simResultToBlock(content: SimOutput, toolUseID: string): ToolResultBlockParam {
   const lines: string[] = [`Status: ${content.status}`]
-  if (content.gas_used) lines.push(`Gas used: ${content.gas_used}`)
+  if (content.gas_used != null) lines.push(`Gas used: ${content.gas_used}`)
   if (content.revert_reason) lines.push(`Revert: ${content.revert_reason}`)
   if (content.tenderly_url) lines.push(`Tenderly: ${content.tenderly_url}`)
   if (content.error) lines.push(`Error: ${content.error}`)
@@ -168,7 +168,7 @@ export const OneclawSubmitTransactionTool = buildTool({
         data: {
           status: res.data?.status ?? 'submitted',
           tx_hash: res.data?.tx_hash,
-          from: res.data?.to,
+          from: res.data?.from,
         },
       }
     } catch (err: any) {
