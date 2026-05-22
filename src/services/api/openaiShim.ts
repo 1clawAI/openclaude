@@ -1578,9 +1578,9 @@ class OpenAIShimStream {
 class OpenAIShimMessages {
   private defaultHeaders: Record<string, string>
   private reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
-  private providerOverride?: { model: string; baseURL: string; apiKey: string }
+  private providerOverride?: { model: string; baseURL: string; apiKey: string; isShroudRouted?: boolean }
 
-  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string }) {
+  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string; isShroudRouted?: boolean }) {
     this.defaultHeaders = filterAnthropicHeaders(defaultHeaders)
     this.reasoningEffort = reasoningEffort
     this.providerOverride = providerOverride
@@ -1843,8 +1843,7 @@ class OpenAIShimMessages {
       delete body.max_completion_tokens
     }
 
-    // Shroud→Anthropic via Stripe: Anthropic backend requires max_tokens
-    if (this.providerOverride && request.baseUrl.includes('shroud') && body.max_completion_tokens !== undefined) {
+    if (this.providerOverride?.isShroudRouted && body.max_completion_tokens !== undefined) {
       body.max_tokens = body.max_completion_tokens
       delete body.max_completion_tokens
     }
@@ -2102,8 +2101,13 @@ class OpenAIShimMessages {
       })()
       if (shroudRouting) {
         request = { ...request, baseUrl: shroudRouting.baseUrl }
+        for (const key of Object.keys(headers)) {
+          const lower = key.toLowerCase()
+          if (lower === 'authorization' || lower === 'x-api-key' || lower === 'api-key') {
+            delete headers[key]
+          }
+        }
         Object.assign(headers, shroudRouting.headers)
-        delete headers['Authorization']
       }
     }
 
@@ -2582,7 +2586,7 @@ class OpenAIShimBeta {
   messages: OpenAIShimMessages
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
 
-  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string }) {
+  constructor(defaultHeaders: Record<string, string>, reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh', providerOverride?: { model: string; baseURL: string; apiKey: string; isShroudRouted?: boolean }) {
     this.messages = new OpenAIShimMessages(defaultHeaders, reasoningEffort, providerOverride)
     this.reasoningEffort = reasoningEffort
   }
@@ -2593,7 +2597,7 @@ export function createOpenAIShimClient(options: {
   maxRetries?: number
   timeout?: number
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
-  providerOverride?: { model: string; baseURL: string; apiKey: string }
+  providerOverride?: { model: string; baseURL: string; apiKey: string; isShroudRouted?: boolean }
 }): unknown {
   hydrateGeminiAccessTokenFromSecureStorage()
   hydrateGithubModelsTokenFromSecureStorage()

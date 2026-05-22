@@ -15,6 +15,7 @@ export interface ShroudRoutingResult {
   providerHint: string
   useOpenAICompat?: boolean
   stripeModelName?: string
+  isShroudRouted?: boolean
 }
 
 const PROVIDER_ENV_TO_SHROUD_PROVIDER: Record<string, string> = {
@@ -71,7 +72,7 @@ export function buildShroudHeaders(options?: {
 
   if (authMode === 'token-billing') {
     headers['X-Shroud-Billing'] = 'token'
-  } else if (config?.vaultId) {
+  } else if (authMode === 'byo-key' && config?.vaultId) {
     const envKey = Object.entries(PROVIDER_ENV_TO_SHROUD_PROVIDER).find(
       ([_, p]) => p === provider,
     )?.[0]
@@ -109,6 +110,7 @@ export function applyShroudRouting(options?: {
   if (!isOneclawConfigured()) return null
 
   const config = loadOneclawConfig()
+  if (config?.authMode === 'oidc-federation') return null
   const provider = options?.provider ?? getShroudProvider() ?? 'openai'
   const headers = buildShroudHeaders({ ...options, provider })
 
@@ -125,5 +127,6 @@ export function applyShroudRouting(options?: {
     providerHint: provider,
     useOpenAICompat: isTokenBilling,
     stripeModelName: isTokenBilling && options?.model ? toStripeModelName(options.model) : undefined,
+    isShroudRouted: true,
   }
 }

@@ -528,6 +528,7 @@ export async function getAnthropicClient({
           model: stripeModel,
           baseURL: shroudAnthropicRouting.baseUrl,
           apiKey: 'shroud-managed',
+          isShroudRouted: true,
         },
       }) as unknown as Anthropic
     }
@@ -539,6 +540,25 @@ export async function getAnthropicClient({
       defaultHeaders: shroudHeaders,
       ...(isDebugToStdErr() && { logger: createStderrLogger() }),
     })
+  }
+
+  // 1claw OIDC Federation: keyless Anthropic access via WIF
+  // Only used when the user has federation enabled and no existing auth
+  if (!isClaudeAiSubscriber && !apiKey && !getAnthropicApiKey()) {
+    const oidcToken = await (async () => {
+      try {
+        const { resolveAnthropicOidcToken } = await import('../../utils/oneclawOidc.js')
+        return resolveAnthropicOidcToken()
+      } catch { return null }
+    })()
+    if (oidcToken) {
+      return new Anthropic({
+        apiKey: oidcToken,
+        ...ARGS,
+        defaultHeaders,
+        ...(isDebugToStdErr() && { logger: createStderrLogger() }),
+      })
+    }
   }
 
   // Determine authentication method based on available tokens

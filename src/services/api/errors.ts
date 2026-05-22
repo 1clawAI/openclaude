@@ -948,9 +948,13 @@ export function getAssistantMessageFromError(
   ) {
     // 1claw Shroud auth: surface actionable error instead of generic "Not logged in"
     if (process.env.ONECLAW_AUTH_ACTIVE === '1') {
+      const authMode = process.env.ONECLAW_AUTH_MODE
+      const hint = authMode === 'oidc-federation'
+        ? 'OIDC federation error · Verify OIDC IdP is registered in Anthropic Console and agent has federation_enabled'
+        : 'Shroud auth error · Check 1claw agent credentials and ensure LLM Token Billing is enabled at https://1claw.xyz → Billing'
       return createAssistantAPIErrorMessage({
         error: 'authentication_failed',
-        content: 'Shroud auth error · Check 1claw agent credentials and ensure LLM Token Billing is enabled at https://1claw.xyz → Billing',
+        content: hint,
       })
     }
 
