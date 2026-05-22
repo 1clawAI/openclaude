@@ -146,6 +146,16 @@ async function main(): Promise<void> {
     hydrateGithubModelsTokenFromSecureStorage()
   }
 
+  // Populate provider API keys from 1claw Vault (fills gaps, does not override existing env)
+  {
+    const { populateEnvFromVault } = await import('../utils/oneclawVault.js')
+    const vaultKeys = await populateEnvFromVault()
+    if (vaultKeys > 0) {
+      const { logForDebugging } = await import('../utils/debug.js')
+      logForDebugging(`1claw vault: loaded ${vaultKeys} provider key(s) from vault`)
+    }
+  }
+
   await validateProviderEnvForStartupOrExit()
 
   // #808: --model alone (no --provider) — route to the env var matching the
